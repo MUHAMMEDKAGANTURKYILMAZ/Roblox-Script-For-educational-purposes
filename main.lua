@@ -1,8 +1,9 @@
 --====================================================================
--- DELTA SLAP BATTLES v6.6 - Büyük Görünmez Zemin + Düzeltmeler
+-- DELTA SLAP BATTLES v6.7 - Yer Kontrol + Stabil Işınlanma
 --====================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local lplayer = Players.LocalPlayer
 local karakter = lplayer.Character or lplayer.CharacterAdded:Wait()
@@ -11,7 +12,7 @@ local karakter = lplayer.Character or lplayer.CharacterAdded:Wait()
 local AUTO_SLAP_AKTIF = true
 local AUTO_WALK_AKTIF = true
 local ANTI_SLAP_AKTIF = true
-local ANTI_VOID_PLATFORM = true   -- Yeni Büyük Görünmez Zemin
+local ANTI_VOID_PLATFORM = true
 local TELEPORT_TO_PLAYER = true
 
 local SLAP_HIZ = 0.14
@@ -33,7 +34,7 @@ Main.Parent = ScreenGui
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1,0,0,35)
 Title.BackgroundColor3 = Color3.fromRGB(35,35,35)
-Title.Text = "DELTA SLAP v6.6"
+Title.Text = "DELTA SLAP v6.7"
 Title.TextColor3 = Color3.fromRGB(255, 60, 60)
 Title.Font = Enum.Font.SourceSansBold
 Title.TextSize = 16
@@ -82,7 +83,7 @@ end
 ToggleButton("Sürekli Vur", AUTO_SLAP_AKTIF, function(v) AUTO_SLAP_AKTIF = v end)
 ToggleButton("Düşmana Yürü", AUTO_WALK_AKTIF, function(v) AUTO_WALK_AKTIF = v end)
 ToggleButton("Anti Slap", ANTI_SLAP_AKTIF, function(v) ANTI_SLAP_AKTIF = v end)
-ToggleButton("Büyük Zemin (Anti Void)", ANTI_VOID_PLATFORM, function(v) ANTI_VOID_PLATFORM = v end)
+ToggleButton("Büyük Zemin", ANTI_VOID_PLATFORM, function(v) ANTI_VOID_PLATFORM = v end)
 ToggleButton("Oyuncuya Işınlan", TELEPORT_TO_PLAYER, function(v) TELEPORT_TO_PLAYER = v end)
 
 -- Gizle/Göster
@@ -99,22 +100,71 @@ local voidPlatform = nil
 
 local function CreateAntiVoidPlatform()
     if voidPlatform then voidPlatform:Destroy() end
-    
     voidPlatform = Instance.new("Part")
-    voidPlatform.Name = "DeltaAntiVoid"
-    voidPlatform.Size = Vector3.new(6000, 1, 6000)  -- Çok büyük
+    voidPlatform.Size = Vector3.new(6000, 1, 6000)
     voidPlatform.Transparency = 1
     voidPlatform.Anchored = true
     voidPlatform.CanCollide = true
-    voidPlatform.Material = Enum.Material.ForceField
-    voidPlatform.Color = Color3.fromRGB(0,0,0)
     voidPlatform.Parent = workspace
 end
 
--- =================== ANA DÖNGÜ ===================
+-- Raycast ile Yer Kontrolü
+local function isOnGround(root)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {karakter}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local result = workspace:Raycast(root.Position, Vector3.new(0, -10, 0), rayParams)
+    return result ~= nil
+end
 
--- Reach (Tamamen Kaldırıldı - Hiçbir şey değiştirmiyoruz)
--- Sadece normal boyutta kalacak
+-- =================== ANA DÖNGÜ ===================
+RunService.Heartbeat:Connect(function()
+    local root = karakter:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    -- Büyük Zemin
+    if ANTI_VOID_PLATFORM then
+        if not voidPlatform then CreateAntiVoidPlatform() end
+        voidPlatform.CFrame = CFrame.new(root.Position.X, root.Position.Y - 5, root.Position.Z)
+    elseif voidPlatform then
+        voidPlatform:Destroy()
+        voidPlatform = nil
+    end
+
+    -- Yer Kontrolü (Zemine değmiyorsa aşağı çek)
+    if not isOnGround(root) then
+        root.AssemblyLinearVelocity = Vector3.new(
+            root.AssemblyLinearVelocity.X * 0.6,
+            -25,  -- Aşağı kuvvet
+            root.AssemblyLinearVelocity.Z * 0.6
+        )
+    end
+
+    -- Oyuncuya Işınlanma (Yükselmeden)
+    if TELEPORT_TO_PLAYER then
+        local hedef = nil
+        local enKisa = math.huge
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= lplayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (root.Position - p.Character.HumanoidRootPart.Position).Magnitude
+                if dist < enKisa and dist <= TELEPORT_MENZIL then
+                    enKisa = dist
+                    hedef = p.Character.HumanoidRootPart
+                end
+            end
+        end
+        
+        if hedef then
+            local hedefPoz = hedef.Position
+            local direction = (hedefPoz - root.Position).Unit
+            local yeniPoz = hedefPoz - direction * TELEPORT_YAKINLIK
+            
+            -- Yükseltme yok, sadece X ve Z
+            root.CFrame = CFrame.new(yeniPoz.X, root.Position.Y, yeniPoz.Z)
+        end
+    end
+end)
 
 -- Sürekli Vur
 task.spawn(function()
@@ -127,65 +177,13 @@ task.spawn(function()
     end
 end)
 
--- En Yakın Oyuncu
-local function getEnYakin()
-    local enYakin = nil
-    local enKisa = math.huge
-    local myRoot = karakter:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
-    
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= lplayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (myRoot.Position - p.Character.HumanoidRootPart.Position).Magnitude
-            if dist < enKisa and dist <= TELEPORT_MENZIL then
-                enKisa = dist
-                enYakin = p.Character.HumanoidRootPart
-            end
-        end
-    end
-    return enYakin
-end
-
--- Ana Döngü (Yerde Tutma + Işınlanma + Zemin)
-RunService.Heartbeat:Connect(function()
-    local root = karakter:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    -- Büyük Görünmez Zemin
-    if ANTI_VOID_PLATFORM then
-        if not voidPlatform then CreateAntiVoidPlatform() end
-        voidPlatform.CFrame = CFrame.new(root.Position.X, root.Position.Y - 4, root.Position.Z)
-    elseif voidPlatform then
-        voidPlatform:Destroy()
-        voidPlatform = nil
-    end
-
-    -- Sürekli Yerde Tutma
-    if root.Position.Y < 10 then
-        root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X * 0.4, 10, root.AssemblyLinearVelocity.Z * 0.4)
-    end
-
-    -- Oyuncuya Işınlanma
-    if TELEPORT_TO_PLAYER then
-        local hedef = getEnYakin()
-        if hedef then
-            local hedefPoz = hedef.Position
-            local direction = (hedefPoz - root.Position).Unit
-            local yeniPoz = hedefPoz - direction * TELEPORT_YAKINLIK
-            root.CFrame = CFrame.new(yeniPoz.X, math.max(yeniPoz.Y + 5, 15), yeniPoz.Z)
-        end
-    end
-end)
-
 -- Anti Slap
 RunService.Heartbeat:Connect(function()
     if not ANTI_SLAP_AKTIF then return end
     local hum = karakter:FindFirstChildOfClass("Humanoid")
-    local root = karakter:FindFirstChild("HumanoidRootPart")
-    if hum and root then
+    if hum then
         hum.PlatformStand = false
         hum.WalkSpeed = 20
-        root.AssemblyLinearVelocity = root.AssemblyLinearVelocity * 0.4
     end
 end)
 
@@ -195,5 +193,5 @@ lplayer.CharacterAdded:Connect(function(newChar)
     task.wait(1)
 end)
 
-print("Delta Slap Battles v6.6 Yüklendi")
-print("Hitbox tamamen kaldırıldı + Ayak altında devasa görünmez zemin eklendi ✅")
+print("Delta Slap Battles v6.7 Yüklendi ✅")
+print("Yükselme sorunu düzeltildi + Yer kontrolü eklendi")
