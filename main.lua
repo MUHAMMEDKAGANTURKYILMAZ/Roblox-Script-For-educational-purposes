@@ -1,16 +1,16 @@
 --====================================================================
--- ULTIMATE COMBAT & AUTOMATION SUITE (E-TAP INTEGRATED GUI)
+-- DELTA MOBILE COMPATIBLE ULTIMATE SUITE (FIXED v6)
 --====================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
+local ContextActionService = game:GetService("ContextActionService")
 
 local lplayer = Players.LocalPlayer
 local konumGecmisi = {}
 local saldiriyor = false
 
--- OTOMASYON DURUMLARI (GUI'DEN KONTROL EDİLİR)
+-- OTOMASYON DURUMLARI (AÇIK/KAPALI)
 local KORUMA_AKTIF = true
 local HITBOX_AKTIF = true
 local WALKFLY_AKTIF = false
@@ -18,12 +18,12 @@ local AUTO_ATTACK_AKTIF = false
 local AUTO_WALK_AKTIF = false
 local AUTO_E_AKTIF = false
 
--- METRİK AYARLARI
+-- METRİKLER
 local MENZIL = 25          
 local KACIS_MESAFESI = 30  
 local HITBOX_BOYUTU = Vector3.new(10, 10, 10)
 
--- Karakter Boyut Algılayıcı
+-- Mobil Karakter Boyut Hesaplayıcı
 local function getKarakterBoyut()
     local char = lplayer.Character
     if char and char:FindFirstChild("Humanoid") then
@@ -32,7 +32,7 @@ local function getKarakterBoyut()
     return 2
 end
 
--- Sürükleme Fonksiyonu
+-- %100 Mobil Touch Sürükleme Fonksiyonu
 local function makeDraggable(guiObject)
     local dragging, dragInput, dragStart, startPos
     guiObject.InputBegan:Connect(function(input)
@@ -59,18 +59,18 @@ local function makeDraggable(guiObject)
 end
 
 -- ==========================================
--- Gelişmiş Hile Menüsü Kurulumu (GUI)
+-- MOBIL UYUMLU Gelişmiş Hile Menüsü (GUI)
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "UltimateSuiteMenu"
+ScreenGui.Name = "DeltaFixedMenu"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = lplayer:WaitForChild("PlayerGui")
 
--- Ana Panel Arka Planı (Yeni boyut buton sığması için uyarlandı)
+-- Ana Panel (Genişlik ve Yükseklik Mobile Göre Optimize Edildi)
 local MainPanel = Instance.new("Frame")
-MainPanel.Size = UDim2.new(0, 180, 0, 430)
-MainPanel.Position = UDim2.new(0, 20, 0, 80)
-MainPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainPanel.Size = UDim2.new(0, 260, 0, 240)
+MainPanel.Position = UDim2.new(0.1, 0, 0.2, 0)
+MainPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 MainPanel.BorderSizePixel = 2
 MainPanel.BorderColor3 = Color3.fromRGB(180, 30, 30)
 MainPanel.Parent = ScreenGui
@@ -78,31 +78,46 @@ makeDraggable(MainPanel)
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
-Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-Title.Text = "COMBAT PANEL v5"
+Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Title.Text = "DELTA FIXED PANEL v6"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.SourceSansBold
 Title.TextSize = 14
 Title.Parent = MainPanel
 
-local function createToggleBtn(name, text, posY, defaultState, callback)
+-- Butonları İçine Alan Gövde (Gizleme İşlemi İçin)
+local ButtonContainer = Instance.new("Frame")
+ButtonContainer.Size = UDim2.new(1, 0, 1, -30)
+ButtonContainer.Position = UDim2.new(0, 0, 0, 30)
+ButtonContainer.BackgroundTransparency = 1
+ButtonContainer.Parent = MainPanel
+
+-- Yan Yana Buton Düzeni İçin Grid Yapısı
+local UIGridLayout = Instance.new("UIGridLayout")
+UIGridLayout.CellSize = UDim2.new(0, 115, 0, 35)
+UIGridLayout.CellPadding = UDim2.new(0, 10, 0, 8)
+UIGridLayout.StartCorner = Enum.UIStartCorner.TopLeft
+UIGridLayout.FillDirection = Enum.UIFillDirection.Horizontal
+UIGridLayout.Parent = ButtonContainer
+UIGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Buton Oluşturucu Fonksiyon
+local function createToggleBtn(text, defaultState, callback)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 160, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, posY)
     btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.BorderSizePixel = 1
-    btn.Parent = MainPanel
+    btn.Parent = ButtonContainer
     
     local state = defaultState
     local function updateVisual()
         if state then
-            btn.BackgroundColor3 = Color3.fromRGB(0, 130, 40)
-            btn.Text = text .. ": AÇIK"
+            btn.BackgroundColor3 = Color3.fromRGB(0, 120, 35)
+            btn.Text = text .. "\n[AÇIK]"
         else
-            btn.BackgroundColor3 = Color3.fromRGB(130, 0, 0)
-            btn.Text = text .. ": KAPALI"
+            btn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
+            btn.Text = text .. "\n[KAPALI]"
         end
     end
     updateVisual()
@@ -115,78 +130,96 @@ local function createToggleBtn(name, text, posY, defaultState, callback)
     return btn
 end
 
--- Butonların Menüye Yerleştirilmesi
+-- Aksiyon Butonları (Grid İçinde Otomatik Hizalanır)
 local BackstabBtn = Instance.new("TextButton")
-BackstabBtn.Size = UDim2.new(0, 160, 0, 35)
-BackstabBtn.Position = UDim2.new(0, 10, 0, 40)
 BackstabBtn.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
-BackstabBtn.Text = "GİZLİ ANLIK SALDIRI"
+BackstabBtn.Text = "ANLIK\nSALDIRI"
 BackstabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 BackstabBtn.Font = Enum.Font.SourceSansBold
-BackstabBtn.TextSize = 13
-BackstabBtn.Parent = MainPanel
+BackstabBtn.TextSize = 12
+BackstabBtn.Parent = ButtonContainer
 
 local RewindBtn = Instance.new("TextButton")
-RewindBtn.Size = UDim2.new(0, 160, 0, 35)
-RewindBtn.Position = UDim2.new(0, 10, 0, 80)
 RewindBtn.BackgroundColor3 = Color3.fromRGB(30, 80, 180)
-RewindBtn.Text = "10s GERİ IŞINLAN"
+RewindBtn.Text = "10s GERİ\nIŞINLAN"
 RewindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 RewindBtn.Font = Enum.Font.SourceSansBold
-RewindBtn.TextSize = 13
-RewindBtn.Parent = MainPanel
+RewindBtn.TextSize = 12
+RewindBtn.Parent = ButtonContainer
 
-createToggleBtn("Koruma", "25s YATAY KORUMA", 120, KORUMA_AKTIF, function(v) KORUMA_AKTIF = v end)
-createToggleBtn("Hitbox", "10x10 HITBOX", 160, HITBOX_AKTIF, function(v) HITBOX_AKTIF = v end)
-createToggleBtn("WalkFly", "GİZLİ WALKFLY", 200, WALKFLY_AKTIF, function(v) WALKFLY_AKTIF = v end)
-createToggleBtn("AutoAttack", "0.5s OTO VURUŞ", 240, AUTO_ATTACK_AKTIF, function(v) AUTO_ATTACK_AKTIF = v end)
-createToggleBtn("AutoWalk", "OTO AKILLI TAKİP", 280, AUTO_WALK_AKTIF, function(v) AUTO_WALK_AKTIF = v end)
-createToggleBtn("AutoE", "6s OTO E TUŞU", 320, AUTO_E_AKTIF, function(v) AUTO_E_AKTIF = v end)
+createToggleBtn("YATAY KORUMA", KORUMA_AKTIF, function(v) KORUMA_AKTIF = v end)
+createToggleBtn("10x10 HITBOX", HITBOX_AKTIF, function(v) HITBOX_AKTIF = v end)
+createToggleBtn("GİZLİ WALKFLY", WALKFLY_AKTIF, function(v) WALKFLY_AKTIF = v end)
+createToggleBtn("0.5s OTO VURUŞ", AUTO_ATTACK_AKTIF, function(v) AUTO_ATTACK_AKTIF = v end)
+createToggleBtn("AKILLI TAKİP", AUTO_WALK_AKTIF, function(v) AUTO_WALK_AKTIF = v end)
+createToggleBtn("6s OTO E TUŞU", AUTO_E_AKTIF, function(v) AUTO_E_AKTIF = v end)
 
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 160, 0, 30)
-CloseBtn.Position = UDim2.new(0, 10, 0, 390)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-CloseBtn.Text = "MENÜYÜ GİZLE / AÇ"
-CloseBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-CloseBtn.Font = Enum.Font.SourceSansBold
-CloseBtn.TextSize = 12
-CloseBtn.Parent = MainPanel
+-- KESİN ÇALIŞAN GİZLE/AÇ BUTONU (Başlığın Sağ Üst Köşesinde)
+local ToggleMenuBtn = Instance.new("TextButton")
+ToggleMenuBtn.Size = UDim2.new(0, 60, 0, 24)
+ToggleMenuBtn.Position = UDim2.new(1, -65, 0, 3)
+ToggleMenuBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+ToggleMenuBtn.Text = "GİZLE"
+ToggleMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleMenuBtn.Font = Enum.Font.SourceSansBold
+ToggleMenuBtn.TextSize = 11
+ToggleMenuBtn.Parent = MainPanel
 
 local menuAcik = true
-CloseBtn.MouseButton1Click:Connect(function()
+ToggleMenuBtn.MouseButton1Click:Connect(function()
     menuAcik = not menuAcik
-    MainPanel.Size = menuAcik and UDim2.new(0, 180, 0, 430) or UDim2.new(0, 180, 0, 30)
-end)
-
--- ==========================================
--- FONKSİYONEL MODÜLLER
--- ==========================================
-
--- 6 Saniyede Bir Otomatik E Tuşu Basma Döngüsü
-task.spawn(function()
-    while true do
-        if AUTO_E_AKTIF then
-            -- Sanal olarak klavyeden E tuşuna basılıp bırakılmasını simüle eder
-            VirtualUser:TypeKey(Enum.KeyCode.E.Value)
-            print("[AUTO-E] E tuşuna basıldı.")
-        end
-        task.wait(6) -- Tam olarak 6 saniye aralıkla çalışır
+    if menuAcik then
+        ButtonContainer.Visible = true
+        MainPanel.Size = UDim2.new(0, 260, 0, 240)
+        ToggleMenuBtn.Text = "GİZLE"
+    else
+        ButtonContainer.Visible = false
+        MainPanel.Size = UDim2.new(0, 260, 0, 30)
+        ToggleMenuBtn.Text = "GÖSTER"
     end
 end)
 
--- 10 Saniye Geri Işınlanma Mekanizması
+-- ==========================================
+-- GÜVENİLİR MOBİL MODÜL SİSTEMLERİ
+-- ==========================================
+
+-- Mobil Uyumlu Sanal Tıklama Fonksiyonu (Tool'ları Tetikler)
+local function mobileClick()
+    local char = lplayer.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if tool then
+        tool:Activate() -- Ekrana tıklamak yerine doğrudan elindeki silahı sunucu seviyesinde tetikler (Kesin Çözüm)
+    end
+end
+
+-- 6 Saniyede Bir Otomatik E Tuşu Modülü
+task.spawn(function()
+    while true do
+        if AUTO_E_AKTIF then
+            -- ProximityPrompt'ları doğrudan kod üzerinden tetikler (Tuşa basma taklidinden çok daha hızlı ve kesindir)
+            for _, prompt in pairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") and lplayer:DistanceFromCharacter(prompt.Parent.Position) <= prompt.MaxActivationDistance then
+                    prompt:InputHoldBegin()
+                    task.wait(0.1)
+                    prompt:InputHoldEnd()
+                end
+            end
+        end
+        task.wait(6)
+    end
+end)
+
+-- 10 Saniye Geri Işınlanma Modülü
 RewindBtn.MouseButton1Click:Connect(function()
     local char = lplayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if hrp and #konumGecmisi > 0 then
         hrp.CFrame = konumGecmisi[1]
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        print("[REWIND] 10 saniye önceki konuma dönüldü!")
     end
 end)
 
--- FIFO Konum Kaydedici (Maksimum 10 kayıt)
+-- Konum Kaydedici Hafıza Döngüsü (FIFO)
 task.spawn(function()
     while true do
         task.wait(1)
@@ -198,7 +231,7 @@ task.spawn(function()
     end
 end)
 
--- WalkFly (Belli Etmeden Havada Yürüme) Modülü
+-- Mobil Gizli WalkFly Modülü
 RunService.Heartbeat:Connect(function()
     local char = lplayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -218,19 +251,17 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- 0.5 Saniyede Bir Otomatik Vuruş Döngüsü
+-- 0.5 Saniyede Bir Otomatik Vuruş
 task.spawn(function()
     while true do
         if AUTO_ATTACK_AKTIF then
-            VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-            task.wait(0.01)
-            VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+            mobileClick()
         end
         task.wait(0.5)
     end
 end)
 
--- En Yakın Oyuncuyu Bulma
+-- En Yakın Oyuncuyu Bulucu
 local function getEnYakinOyuncu()
     local enYakin = nil
     local enKisaMesafe = math.huge
@@ -250,7 +281,7 @@ local function getEnYakinOyuncu()
     return enYakin
 end
 
--- Akıllı Kırmızı Nesne Algılayıcı
+-- Akıllı Kırmızı Nesne Bulucu
 local function getKirmiziNesne()
     local char = lplayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -285,8 +316,9 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Gelişmiş Sabitleyiciler & Hız ve Hitbox Modülü
+-- Hitbox Genişletici, Hız Sabitleyici ve Anti-Knockback (Tam Kilit)
 RunService.RenderStepped:Connect(function()
+    -- Hitbox Kontrolü
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= lplayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local root = player.Character.HumanoidRootPart
@@ -302,6 +334,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
     
+    -- Anti Ragdoll & Hız Kilit
     local char = lplayer.Character
     local humanoid = char and char:FindFirstChildOfClass("Humanoid")
     if humanoid then
@@ -311,7 +344,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- GÖRÜNMEZLİK VE KALKAN FONKSİYONU
+-- GÖRÜNMEZLİK FONKSİYONU
 local function setKalkanVeGorunmezlik(aktif)
     local char = lplayer.Character
     if not char then return end
@@ -324,7 +357,7 @@ local function setKalkanVeGorunmezlik(aktif)
     end
 end
 
--- ANLIK GİZLİ SALDIRI TETİKLEYİCİSİ
+-- MOBIL KESIN ÇALIŞAN BACKSTAB SALDIRISI
 BackstabBtn.MouseButton1Click:Connect(function()
     if saldiriyor then return end
     local char = lplayer.Character
@@ -337,11 +370,9 @@ BackstabBtn.MouseButton1Click:Connect(function()
     saldiriyor = true
     local eskiKonum = hrp.CFrame 
 
-    VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    task.wait(0.01)
-    VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    mobileClick()
 
-    task.wait(0.19)
+    task.wait(0.15)
     setKalkanVeGorunmezlik(true)
 
     local tBaslangic = tick()
@@ -366,7 +397,7 @@ BackstabBtn.MouseButton1Click:Connect(function()
     saldiriyor = false
 end)
 
--- RAYCAST TABANLI DEFANS KORUMASI (Sadece Yatay)
+-- DEFANS: Raycast Tabanlı Kaçış (Yatay Zemin Kontrollü)
 RunService.Heartbeat:Connect(function()
     if not KORUMA_AKTIF or saldiriyor then return end
     local char = lplayer.Character
@@ -410,4 +441,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("6s Oto-E Döngülü Hepsi Bir Arada Menü Başarıyla Güncellendi.")
+print("Delta Mobile %100 Uyumlu Panel Yuklendi.")
