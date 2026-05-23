@@ -1,5 +1,5 @@
 --====================================================================
--- ADVANCED 3D EVASION SCRIPT (MENZİL 25 - 3D RASTGELE KAÇIŞ)
+-- HORIZONTAL 2D EVASION & RAYCAST SAFE GUARD (MENZİL 25 - HIZ SAYAÇLI)
 --====================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,9 +8,9 @@ local lplayer = Players.LocalPlayer
 local setKonumu = nil
 local konumGecmisi = {}
 
--- GÜNCEL METRİK AYARLARI
+-- GÜVENLİK VE METRİK AYARLARI
 local MENZIL = 25          -- 25 stud mesafeye bir oyuncu girdiğinde tetiklenir
-local KACIS_MESAFESI = 30  -- Her yöne 30 stud uzağa rastgele ışınlanır
+local KACIS_MESAFESI = 30  -- Yatay düzlemde kaç stud uzağa kaçılacağı
 
 -- Karakter boyutu algılayıcı
 local function getKarakterBoyut()
@@ -21,7 +21,19 @@ local function getKarakterBoyut()
     return 2
 end
 
--- 3 Boyutlu Tam Rastgele Kaçış Döngüsü
+-- 4 Saniyede Bir Hızı 50 Yapma Döngüsü
+task.spawn(function()
+    while true do
+        local char = lplayer.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = 50
+        end
+        task.wait(4) -- Her 4 saniyede bir tetiklenir
+    end
+end)
+
+-- Yatay Düzlemde Kaçış ve Kesin Zemin Kontrol Döngüsü
 RunService.Heartbeat:Connect(function()
     local char = lplayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -32,41 +44,42 @@ RunService.Heartbeat:Connect(function()
             local oHrp = other.Character.HumanoidRootPart
             local mesafe = (hrp.Position - oHrp.Position).Magnitude
             
-            -- Mesafe 25 stud veya daha altındaysa tetiklenir
+            -- Belirlenen menzile girildiğinde tetiklenir
             if mesafe <= MENZIL then
-                -- Küresel (3D) rastgele yön vektörü hesaplama
-                local rastgeleX = math.random(-100, 100) / 100
-                local rastgeleY = math.random(0, 100) / 100 -- Yere çakılmayı önlemek için yukarı/düz eksen odaklı
-                local rastgeleZ = math.random(-100, 100) / 100
+                local bulunanGuvliKonum = nil
                 
-                local hamYon = Vector3.new(rastgeleX, rastgeleY, rastgeleZ).Unit
-                local kacisVektoru = hamYon * KACIS_MESAFESI
+                -- Güvenli zemin bulana kadar maksimum 5 deneme yapar (Sonsuz döngü kilidini önler)
+                for i = 1, 5 do
+                    -- Sadece X ve Z eksenlerinde (Yatay) 360 derece rastgele yön
+                    local rastgeleAci = math.rad(math.random(0, 360))
+                    local yatayYon = Vector3.new(math.cos(rastgeleAci), 0, math.sin(rastgeleAci))
+                    local hedefPozisyon = hrp.Position + (yatayYon * KACIS_MESAFESI)
+                    
+                    -- RAYCAST ILE BOŞLUK KONTROLÜ
+                    -- Hedeflenen noktanın 10 stud yukarısından aşağıya doğru 40 stud boyunca zemin arar
+                    local raycastParams = RaycastParams.new()
+                    raycastParams.FilterDescendantsInstances = {char, other.Character}
+                    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                    
+                    local rayOrigin = hedefPozisyon + Vector3.new(0, 10, 0)
+                    local rayDirection = Vector3.new(0, -40, 0)
+                    local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+                    
+                    -- Eğer altında basabileceği katı bir zemin (Part/Terrain) bulunduysa koordinatı onaylar
+                    if raycastResult then
+                        bulunanGuvliKonum = raycastResult.Position + Vector3.new(0, getKarakterBoyut(), 0)
+                        break
+                    end
+                end
                 
-                -- Yeni hedef 3D koordinatı
-                local yeniKonum = hrp.Position + kacisVektoru
-                
-                -- BOŞLUĞA DÜŞMEYİ ENGELLEYEN GENİŞ GÜVENLİK KUTUSU
-                local platform = Instance.new("Part")
-                platform.Size = Vector3.new(10, 0.5, 10) -- 10x10 geniş güvenli basma alanı
-                platform.Position = yeniKonum - Vector3.new(0, (getKarakterBoyut() + 0.25), 0)
-                platform.Anchored = true
-                platform.Transparency = 1 -- Tamamen görünmez
-                platform.CanCollide = true
-                platform.Parent = workspace
-                
-                -- Karakteri anında 3D koordinata taşı ve tüm fiziksel momentumu sıfırla
-                hrp.CFrame = CFrame.new(yeniKonum)
-                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                
-                -- Platformun güvenli temizliği
-                task.spawn(function()
-                    task.wait(0.7) -- Havada kalma garantisi süresi
-                    platform:Destroy()
-                end)
-                
-                print("[3D-KAÇIŞ] Oyuncu 25 stud sınırına girdi! 30 stud uzağa her yöne rastgele kaçıldı.")
-                task.wait(0.3) -- Spam ışınlanma koruma gecikmesi
-                break
+                -- Eğer güvenli zemin doğrulandıysa ışınlanmayı gerçekleştirir
+                if bulunanGuvliKonum then
+                    hrp.CFrame = CFrame.new(bulunanGuvliKonum)
+                    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    print("[GÜVENLİK] Doğrulanmış katı zemine yatay ışınlanma yapıldı. Boşluk engellendi.")
+                    task.wait(0.3) -- Ardışık tetiklenme engelleme süresi
+                    break
+                end
             end
         end
     end
@@ -141,7 +154,7 @@ lplayer.Chatted:Connect(function(msg)
                     local hChar = hedef.Character
                     if hChar and hChar:FindFirstChild("HumanoidRootPart") then
                         hrp.CFrame = hChar.HumanoidRootPart.CFrame * CFrame.Angles(0, math.rad(720 * tick()), 0)
-                        akonsona12345678906hChar.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 250, 0)
+                        hChar.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 250, 0)
                     end
                 end
             end)
@@ -149,4 +162,4 @@ lplayer.Chatted:Connect(function(msg)
     end
 end)
 
-print("25 Stud menzilli, 30 Stud 3D rastgele kaçış kodu aktif.")
+print("Yatay kaçış, Raycast zemin koruması ve 4s hız döngüsü aktif.")
