@@ -447,13 +447,30 @@ sitfBtn = createGridButton("Sit Fly", 222, 142, 55, function(b)
     end
 end)
 
-createGridButton("Fling: OFF", 12, 174, 125, function(b)
+--[[ createGridButton("Fling: OFF", 12, 174, 125, function(b)
     flingActive = not flingActive
     b.Text = flingActive and "Fling: ON" or "Fling: OFF"
     b.TextColor3 = flingActive and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(255, 255, 255)
     if flingActive then
         lockCamera()
     else
+        unlockCamera()
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+    end
+end)
+]] 
+
+createGridButton("Fling: OFF", 12, 174, 125, function(b)
+    flingActive = not flingActive
+    b.Text = flingActive and "Fling: ON" or "Fling: OFF"
+    b.TextColor3 = flingActive and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(255, 255, 255)
+    
+    if not flingActive then
         unlockCamera()
         local char = LocalPlayer.Character
         if char then
