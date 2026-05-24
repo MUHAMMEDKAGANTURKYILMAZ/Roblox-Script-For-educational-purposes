@@ -1,0 +1,604 @@
+_G.KatroToken = {
+    Key = 13503,
+    Time = os.time()
+}
+
+local EXPECTED_HASH = 13503
+
+if _G.KatroToken == nil or type(_G.KatroToken) ~= "table" then
+    game.Players.LocalPlayer:Kick("Security Breach: Missing Panel Handshake [Error 0x1]")
+    return
+end
+
+local serverKey = _G.KatroToken.Key or 0
+local timestamp = _G.KatroToken.Time or 0
+local osTime = os.time()
+
+if (serverKey ~= EXPECTED_HASH) or (osTime - timestamp > 10) then
+    game.Players.LocalPlayer:Kick("Security Breach: Token Invalid or Expired [Error 0x2]")
+    return
+end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local SoundService = game:GetService("SoundService")
+local LocalPlayer = Players.LocalPlayer
+
+local walkSpeed = 16
+local jumpPower = 50
+local spinSpeed = 0
+local antiVoidActive = false
+local flyActive = false
+local vehicleFlyActive = false
+local swimFlyActive = false
+local sitFlyActive = false
+local noclipActive = false
+local flingActive = false
+local flySpeed = 50
+
+local lastGlobalForceUpdate = 0
+local camera = workspace.CurrentCamera
+
+if CoreGui:FindFirstChild("KatroMovementSystem") then
+    CoreGui.KatroMovementSystem:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "KatroMovementSystem"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999999
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = CoreGui
+
+local flyBV, flyBG
+
+local function start360Fly(targetPart)
+    if not targetPart then return end
+    if flyBV then flyBV:Destroy() end
+    if flyBG then flyBG:Destroy() end
+
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.Name = "KatroFlyVelocity"
+    flyBV.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    flyBV.Velocity = Vector3.new(0, 0, 0)
+    flyBV.Parent = targetPart
+
+    flyBG = Instance.new("BodyGyro")
+    flyBG.Name = "KatroFlyGyro"
+    flyBG.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+    flyBG.CFrame = targetPart.CFrame
+    flyBG.P = 9000
+    flyBG.D = 100
+    flyBG.Parent = targetPart
+end
+
+local function stop360Fly(targetPart)
+    if flyBV then flyBV:Destroy() flyBV = nil end
+    if flyBG then flyBG:Destroy() flyBG = nil end
+    if targetPart then
+        local bv = targetPart:FindFirstChild("KatroFlyVelocity")
+        local bg = targetPart:FindFirstChild("KatroFlyGyro")
+        if bv then bv:Destroy() end
+        if bg then bg:Destroy() end
+    end
+end
+
+local function giveTpTool()
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if not backpack then return end
+    if backpack:FindFirstChild("KatroTPTool") then return end
+    local tool = Instance.new("Tool")
+    tool.Name = "KatroTPTool"
+    tool.RequiresHandle = false
+    tool.Activated:Connect(function()
+        local mouse = LocalPlayer:GetMouse()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and mouse.Hit then
+            hrp.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+        end
+    end)
+    tool.Parent = backpack
+end
+
+local currentSound = nil
+local function playCustomSound(soundId)
+    if currentSound then
+        currentSound:Stop()
+        currentSound:Destroy()
+        currentSound = nil
+    end
+    local id = tostring(soundId):match("%d+")
+    if not id then return end
+    currentSound = Instance.new("Sound")
+    currentSound.SoundId = "rbxassetid://" .. id
+    currentSound.Volume = 3
+    currentSound.Looped = false
+    currentSound.Parent = SoundService
+    currentSound:Play()
+end
+
+-- ====================================================================
+-- KAMERA (Fling: karakterle beraber gelir ama sallanmaz)
+-- ====================================================================
+local cameraLockConnection = nil
+local cameraOffset = Vector3.new(0, 10, 16) -- karakterin arkası ve üstü
+
+--[[ local function lockCamera()
+    camera.CameraType = Enum.CameraType.Scriptable
+    cameraLockConnection = RunService.RenderStepped:Connect(function()
+        if not flingActive then return end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            -- Kamera karakteri takip eder ama döndürme/sallantı yok
+            local targetPos = hrp.Position + cameraOffset
+            camera.CFrame = CFrame.new(targetPos, hrp.Position)
+        end
+    end)
+end
+]]
+local function unlockCamera()
+    if cameraLockConnection then
+        cameraLockConnection:Disconnect()
+        cameraLockConnection = nil
+    end
+    camera.CameraType = Enum.CameraType.Custom
+end
+
+-- ====================================================================
+-- HEARTBEAT
+-- ====================================================================
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not (humanoid and hrp and humanoid.Health > 0) then return end
+
+    local currentTime = os.clock()
+    local isFlying = flyActive or vehicleFlyActive or swimFlyActive or sitFlyActive
+
+    if currentTime - lastGlobalForceUpdate >= 5 then
+        lastGlobalForceUpdate = currentTime
+        if not isFlying then humanoid.WalkSpeed = walkSpeed end
+        if humanoid.UseJumpPower then
+            humanoid.JumpPower = jumpPower
+        else
+            humanoid.JumpHeight = jumpPower / 3.5
+        end
+    end
+
+    if not isFlying and humanoid.WalkSpeed ~= walkSpeed then
+        humanoid.WalkSpeed = walkSpeed
+    end
+
+    if noclipActive then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+
+    if flingActive then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 9999, 0)
+        if humanoid.MoveDirection.Magnitude > 0 then
+            hrp.AssemblyLinearVelocity = humanoid.MoveDirection * 100
+        else
+            hrp.AssemblyLinearVelocity = Vector3.zero
+        end
+    end
+
+    if spinSpeed > 0 and not flingActive then
+        if not hrp:FindFirstChild("KatroSpinner") then
+            local bAV = Instance.new("BodyAngularVelocity")
+            bAV.Name = "KatroSpinner"
+            bAV.MaxTorque = Vector3.new(0, 1e9, 0)
+            bAV.Parent = hrp
+        end
+        hrp.KatroSpinner.AngularVelocity = Vector3.new(0, spinSpeed, 0)
+    else
+        local s = hrp:FindFirstChild("KatroSpinner")
+        if s then s:Destroy() end
+    end
+
+    if antiVoidActive then
+        if hrp.Position.Y < -30 or (hrp.AssemblyLinearVelocity.Y < -80 and hrp.Position.Y < 10) then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = CFrame.new(hrp.Position.X, 60, hrp.Position.Z)
+        end
+    end
+
+    if swimFlyActive then
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+            humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+        end
+    end
+
+    if sitFlyActive then
+        humanoid.PlatformStand = true
+        humanoid:ChangeState(Enum.HumanoidStateType.PlatformStanding)
+    end
+
+    if isFlying and flyBV and flyBG then
+        local flyTarget = hrp
+        if vehicleFlyActive and humanoid.SeatPart then
+            flyTarget = humanoid.SeatPart
+        end
+        if flyTarget then
+            flyBG.CFrame = camera.CFrame
+            local moveDir = humanoid.MoveDirection
+            if moveDir.Magnitude > 0 then
+                local camLook = camera.CFrame.LookVector
+                local forwardFactor = moveDir:Dot(Vector3.new(camLook.X, 0, camLook.Z).Unit)
+                local resultVel = Vector3.new(moveDir.X, camLook.Y * forwardFactor, moveDir.Z).Unit * flySpeed
+                flyBV.Velocity = resultVel
+            else
+                flyBV.Velocity = Vector3.zero
+            end
+        end
+    end
+end)
+
+-- ====================================================================
+-- UI
+-- ====================================================================
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 85, 0, 35)
+ToggleButton.Position = UDim2.new(1, -132, 1, -310)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+ToggleButton.BorderSizePixel = 2
+ToggleButton.BorderColor3 = Color3.fromRGB(0, 255, 150)
+ToggleButton.Text = "MOTION"
+ToggleButton.TextColor3 = Color3.fromRGB(0, 255, 150)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextSize = 14
+ToggleButton.ZIndex = 15
+ToggleButton.Parent = ScreenGui
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 6)
+ToggleCorner.Parent = ToggleButton
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 290, 0, 310)
+MainFrame.Position = UDim2.new(0.5, -145, 0.4, -155)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 2
+MainFrame.BorderColor3 = Color3.fromRGB(0, 255, 150)
+MainFrame.Visible = false
+MainFrame.ZIndex = 20
+MainFrame.Parent = ScreenGui
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+local Header = Instance.new("TextLabel")
+Header.Size = UDim2.new(1, 0, 0, 32)
+Header.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Header.Text = "  KATRO MOTION SUITE"
+Header.TextColor3 = Color3.fromRGB(0, 255, 150)
+Header.Font = Enum.Font.SourceSansBold
+Header.TextSize = 14
+Header.TextXAlignment = Enum.TextXAlignment.Left
+Header.ZIndex = 25
+Header.Parent = MainFrame
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 10)
+HeaderCorner.Parent = Header
+
+local function createTextBoxRow(labelName, defaultVal, xPos, yPos, callback)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 55, 0, 24)
+    label.Position = UDim2.new(0, xPos, 0, yPos)
+    label.BackgroundTransparency = 1
+    label.Text = labelName
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Font = Enum.Font.SourceSansBold
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.ZIndex = 25
+    label.Parent = MainFrame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 75, 0, 24)
+    box.Position = UDim2.new(0, xPos + 55, 0, yPos)
+    box.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    box.TextColor3 = Color3.fromRGB(0, 255, 150)
+    box.Text = tostring(defaultVal)
+    box.Font = Enum.Font.SourceSansBold
+    box.TextSize = 13
+    box.ZIndex = 25
+    box.Parent = MainFrame
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 5)
+    c.Parent = box
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then callback(num) lastGlobalForceUpdate = 0 end
+    end)
+    return box
+end
+
+local speedBox    = createTextBoxRow("Speed:",   16, 12,  45, function(v) walkSpeed = v end)
+local jumpBox     = createTextBoxRow("Jump:",    50, 152, 45, function(v) jumpPower = v end)
+local spinBox     = createTextBoxRow("Spin:",     0, 12,  75, function(v) spinSpeed = v end)
+local flySpeedBox = createTextBoxRow("Fly Spd:", 50, 152, 75, function(v) flySpeed = v end)
+
+local function createGridButton(text, xPos, yPos, width, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, width, 0, 26)
+    btn.Position = UDim2.new(0, xPos, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 12
+    btn.ZIndex = 25
+    btn.Parent = MainFrame
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 5)
+    c.Parent = btn
+    btn.MouseButton1Click:Connect(function() callback(btn) end)
+    return btn
+end
+
+createGridButton("Anti-Void: OFF", 12, 110, 125, function(b)
+    antiVoidActive = not antiVoidActive
+    b.Text = antiVoidActive and "Anti-Void: ON" or "Anti-Void: OFF"
+    b.TextColor3 = antiVoidActive and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 255, 255)
+end)
+
+local noclipBtn
+local fBtn, vfBtn, sfBtn, sitfBtn
+
+local function clearAllFlyStates()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    if hrp then stop360Fly(hrp) end
+    if humanoid and humanoid.SeatPart then stop360Fly(humanoid.SeatPart) end
+    if humanoid then humanoid.PlatformStand = false end
+
+    flyActive = false; vehicleFlyActive = false
+    swimFlyActive = false; sitFlyActive = false
+
+    if fBtn then fBtn.Text = "360 Fly"; fBtn.TextColor3 = Color3.fromRGB(255, 255, 255) end
+    if vfBtn then vfBtn.Text = "V. Fly"; vfBtn.TextColor3 = Color3.fromRGB(255, 255, 255) end
+    if sfBtn then sfBtn.Text = "Swim Fly"; sfBtn.TextColor3 = Color3.fromRGB(255, 255, 255) end
+    if sitfBtn then sitfBtn.Text = "Sit Fly"; sitfBtn.TextColor3 = Color3.fromRGB(255, 255, 255) end
+end
+
+local function activateFly()
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if not flyActive then
+        clearAllFlyStates()
+        flyActive = true
+        start360Fly(hrp)
+        if fBtn then fBtn.Text = "Fly: ON"; fBtn.TextColor3 = Color3.fromRGB(0, 255, 150) end
+    end
+end
+
+noclipBtn = createGridButton("Noclip: OFF", 152, 110, 125, function(b)
+    noclipActive = not noclipActive
+    b.Text = noclipActive and "Noclip: ON" or "Noclip: OFF"
+    b.TextColor3 = noclipActive and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 255, 255)
+    if noclipActive then
+        activateFly()
+    end
+end)
+
+fBtn = createGridButton("360 Fly", 12, 142, 60, function(b)
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local current = flyActive
+    clearAllFlyStates()
+    if not current then
+        flyActive = true
+        start360Fly(hrp)
+        b.Text = "Fly: ON"
+        b.TextColor3 = Color3.fromRGB(0, 255, 150)
+    end
+end)
+
+vfBtn = createGridButton("V. Fly", 77, 142, 70, function(b)
+    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    local seat = humanoid and humanoid.SeatPart
+    local current = vehicleFlyActive
+    clearAllFlyStates()
+    if not current then
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local target = seat or hrp
+        if target then
+            vehicleFlyActive = true
+            start360Fly(target)
+            b.Text = "VFly: ON"
+            b.TextColor3 = Color3.fromRGB(0, 255, 150)
+        end
+    end
+end)
+
+sfBtn = createGridButton("Swim Fly", 152, 142, 65, function(b)
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local current = swimFlyActive
+    clearAllFlyStates()
+    if not current and hrp then
+        swimFlyActive = true
+        start360Fly(hrp)
+        b.Text = "Swim: ON"
+        b.TextColor3 = Color3.fromRGB(0, 255, 150)
+    end
+end)
+
+sitfBtn = createGridButton("Sit Fly", 222, 142, 55, function(b)
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local current = sitFlyActive
+    clearAllFlyStates()
+    if not current and hrp then
+        sitFlyActive = true
+        start360Fly(hrp)
+        b.Text = "Sit: ON"
+        b.TextColor3 = Color3.fromRGB(0, 255, 150)
+    end
+end)
+
+createGridButton("Fling: OFF", 12, 174, 125, function(b)
+    flingActive = not flingActive
+    b.Text = flingActive and "Fling: ON" or "Fling: OFF"
+    b.TextColor3 = flingActive and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(255, 255, 255)
+    if flingActive then
+        lockCamera()
+    else
+        unlockCamera()
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+    end
+end)
+
+createGridButton("Get TP Tool", 152, 174, 125, function(b)
+    giveTpTool()
+    b.Text = "Tool Received!"
+    b.TextColor3 = Color3.fromRGB(0, 255, 150)
+    task.wait(1)
+    b.Text = "Get TP Tool"
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+end)
+
+local audioBox = Instance.new("TextBox")
+audioBox.Size = UDim2.new(0, 195, 0, 24)
+audioBox.Position = UDim2.new(0, 12, 0, 212)
+audioBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+audioBox.TextColor3 = Color3.fromRGB(255, 200, 0)
+audioBox.Text = "5410086211"
+audioBox.Font = Enum.Font.SourceSansBold
+audioBox.TextSize = 12
+audioBox.ZIndex = 25
+audioBox.Parent = MainFrame
+local abC = Instance.new("UICorner")
+abC.CornerRadius = UDim.new(0, 5)
+abC.Parent = audioBox
+
+local playAudioBtn = Instance.new("TextButton")
+playAudioBtn.Size = UDim2.new(0, 65, 0, 24)
+playAudioBtn.Position = UDim2.new(0, 212, 0, 212)
+playAudioBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+playAudioBtn.Text = "Play ID"
+playAudioBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+playAudioBtn.Font = Enum.Font.SourceSansBold
+playAudioBtn.TextSize = 12
+playAudioBtn.ZIndex = 25
+playAudioBtn.Parent = MainFrame
+local pbmC = Instance.new("UICorner")
+pbmC.CornerRadius = UDim.new(0, 5)
+pbmC.Parent = playAudioBtn
+playAudioBtn.MouseButton1Click:Connect(function()
+    playCustomSound(audioBox.Text)
+end)
+
+local TryMyModeBtn = Instance.new("TextButton")
+TryMyModeBtn.Size = UDim2.new(0, 125, 0, 32)
+TryMyModeBtn.Position = UDim2.new(0, 12, 0, 250)
+TryMyModeBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+TryMyModeBtn.Text = "Try my mode"
+TryMyModeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+TryMyModeBtn.Font = Enum.Font.SourceSansBold
+TryMyModeBtn.TextSize = 13
+TryMyModeBtn.ZIndex = 25
+TryMyModeBtn.Parent = MainFrame
+local tmmC = Instance.new("UICorner")
+tmmC.CornerRadius = UDim.new(0, 6)
+tmmC.Parent = TryMyModeBtn
+
+local ResetBtn = Instance.new("TextButton")
+ResetBtn.Size = UDim2.new(0, 125, 0, 32)
+ResetBtn.Position = UDim2.new(0, 152, 0, 250)
+ResetBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+ResetBtn.Text = "Reset All"
+ResetBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+ResetBtn.Font = Enum.Font.SourceSansBold
+ResetBtn.TextSize = 13
+ResetBtn.ZIndex = 25
+ResetBtn.Parent = MainFrame
+local rstC = Instance.new("UICorner")
+rstC.CornerRadius = UDim.new(0, 6)
+rstC.Parent = ResetBtn
+
+TryMyModeBtn.MouseButton1Click:Connect(function()
+    walkSpeed = 60
+    spinSpeed = 90
+    speedBox.Text = "60"
+    spinBox.Text = "90"
+    lastGlobalForceUpdate = 0
+end)
+
+ResetBtn.MouseButton1Click:Connect(function()
+    clearAllFlyStates()
+    unlockCamera()
+    if currentSound then currentSound:Stop() currentSound:Destroy() currentSound = nil end
+    antiVoidActive = false
+    noclipActive = false
+    flingActive = false
+    if noclipBtn then noclipBtn.Text = "Noclip: OFF"; noclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255) end
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+    walkSpeed = 16; jumpPower = 50; spinSpeed = 0; flySpeed = 50
+    speedBox.Text = "16"; jumpBox.Text = "50"
+    spinBox.Text = "0"; flySpeedBox.Text = "50"
+    lastGlobalForceUpdate = 0
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- ====================================================================
+-- DRAGGING
+-- ====================================================================
+local dragging = false
+local dragInput, dragStart, startPos
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+Header.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        local screenSize = camera.ViewportSize
+        local targetX = startPos.X.Offset + delta.X
+        local targetY = startPos.Y.Offset + delta.Y
+        local clampedX = math.clamp(startPos.X.Scale * screenSize.X + targetX, 0, screenSize.X - MainFrame.AbsoluteSize.X)
+        local clampedY = math.clamp(startPos.Y.Scale * screenSize.Y + targetY, 0, screenSize.Y - MainFrame.AbsoluteSize.Y)
+        MainFrame.Position = UDim2.new(0, clampedX, 0, clampedY)
+    end
+end)
