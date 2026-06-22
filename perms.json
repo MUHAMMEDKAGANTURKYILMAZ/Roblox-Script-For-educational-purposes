@@ -1,1 +1,15 @@
-
+{
+  "ranks": {
+    "OWNER": ["kick", "rejoin", "freeze", "fling", "jail", "warn", "unfreeze", "unjail"],
+    "ADMIN": ["kick", "rejoin", "freeze", "warn", "unfreeze"],
+    "MODERATOR": ["freeze", "warn", "unfreeze"],
+    "HELPER": ["warn"]
+  },
+  "users": {
+    "1x1x1HA_CKERx1x1x1": "OWNER",
+    "Siyahbeyaz63262": "OWNER",
+    "Hydra_1M1": "OWNER", 
+    "": "ADMIN",
+    "": "MODERATOR"
+  }
+}
